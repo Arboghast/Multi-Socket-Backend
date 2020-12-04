@@ -1,18 +1,18 @@
 
-require('dotenv').config();
-const mysql = require('mysql');
-const connection = mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.USER,
-    password: process.env.PASSWORD
-});
+//require('dotenv').config();
+//const mysql = require('mysql');
+// const connection = mysql.createConnection({
+//     host: process.env.DB_HOST,
+//     user: process.env.USER,
+//     password: process.env.PASSWORD
+// });
 const LOBBY_LIMIT = 7;
 const io = require('socket.io')(8000,{cors: true});
 const redis = require('socket.io-redis');
 const ior = require('ioredis');
-const ioredis = new ior(6379, process.env.REDIS_HOST);
+const ioredis = new ior(6379, "10.93.224.3");
 
-io.adapter(redis({host: process.env.REDIS_HOST, port: 6379}));
+io.adapter(redis({host: "10.93.224.3", port: 6379}));
 let randomId = require('nanoid').nanoid;
 
 
