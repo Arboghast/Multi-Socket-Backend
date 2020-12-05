@@ -16,5 +16,9 @@
     "sequelize": "^6.3.5",
     "socket.io": "^3.0.3",
     "socket.io-redis": "^6.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^7.15.0",
+    "eslint-config-google": "^0.14.0"
   }
 }
