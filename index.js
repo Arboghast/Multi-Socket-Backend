@@ -97,10 +97,10 @@ io.on('connection', async (socket) => {
   socket.on('createLobby', async ({username}) =>{
     const rooms = await io.of('/').adapter.allRooms();
     let lobbyCode;
-    // do{
-    //     lobbyCode = randomId(6);
-    // } while(rooms.has(lobbyCode));
-    lobbyCode = 'arceux';
+    do{
+        lobbyCode = randomId(6);
+    } while(rooms.has(lobbyCode));
+    //lobbyCode = 'arceux';
 
     socket.join(lobbyCode);
 
