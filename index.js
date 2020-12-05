@@ -1,18 +1,33 @@
 
-//require('dotenv').config();
-//const mysql = require('mysql');
-// const connection = mysql.createConnection({
-//     host: process.env.DB_HOST,
-//     user: process.env.USER,
-//     password: process.env.PASSWORD
-// });
+require('dotenv').config();
+const { Sequelize } = require('sequelize');
+const sequelize = new Sequelize('NameText', process.env.USER , process.env.PASSWORD, {
+    host: process.env.DB_HOST,
+    dialect: 'mysql',
+    define: {
+        timestamps: false
+    },
+});
+const Prompt = sequelize.define('prompts', {
+    id:{
+        type:Sequelize.INTEGER,
+        allowNull:false,
+        primaryKey:true
+    },
+    prompt:{
+        type: Sequelize.STRING,
+        allowNull: false,
+    }
+});
 const LOBBY_LIMIT = 7;
 const io = require('socket.io')(8000,{cors: true});
 const redis = require('socket.io-redis');
 const ior = require('ioredis');
-const ioredis = new ior(6379, "10.93.224.3");
+const ioredis = new ior(6379, process.env.REDIS_HOST);
 
-io.adapter(redis({host: "10.93.224.3", port: 6379}));
+//
+
+io.adapter(redis({host: process.env.REDIS_HOST, port: 6379}));
 let randomId = require('nanoid').nanoid;
 
 
@@ -72,7 +87,7 @@ io.on('connection', async (socket) => {
 
         socket.join(lobbyCode);
 
-        let json = JSON.stringify({ username: username, ready: false, leader: true });
+        let json = JSON.stringify({ username: username, ready: false, leader: true, lobby: lobbyCode });
         await ioredis.set(socket.id, json);
 
         socket.emit('createLobbyResponse', {
@@ -81,13 +96,18 @@ io.on('connection', async (socket) => {
     });
 
     socket.on('joinLobby', async ({lobbyCode, username}) =>{
+        await ioredis.del(lobbyCode); //COMMENT FOR PRODUCTION
         let rooms = await io.of('/').adapter.allRooms();
         let members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
         let gameInProgress = await ioredis.get(lobbyCode);
+        //console.log(rooms.has(lobbyCode));
+        //console.log(!members.has(socket.id));
+        //console.log(members.size <= LOBBY_LIMIT);
+        //console.log(gameInProgress == null);
 
         if(rooms.has(lobbyCode) && !members.has(socket.id) && members.size <= LOBBY_LIMIT && gameInProgress == null){
             socket.join(lobbyCode);
-            let json = JSON.stringify({ username: username, ready: false, leader: false });
+            let json = JSON.stringify({ username: username, ready: false, leader: false, lobby: lobbyCode });
             await ioredis.set(socket.id, json);
 
             await updateLobby(lobbyCode);
@@ -98,6 +118,7 @@ io.on('connection', async (socket) => {
     });
 
     socket.on('leaveLobby', async ({lobbyCode})=>{
+        //console.log("HIT");
         let members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
         if(members.has(socket.id)){
             let str = await ioredis.get(socket.id);
@@ -148,39 +169,36 @@ io.on('connection', async (socket) => {
         }
     });
 
-    socket.on('startRace', async ({lobbyCode}) =>{
+    socket.on('startGame', async ({lobbyCode}) =>{
         let flag = await readyCheck(lobbyCode);
         if(flag){
-            let text = [];
-            /*
-                ->  Make db query and send text to frontend and populate text
-            */
-            text.push("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Maecenas semper libero.");
+            let {prompt} = await Prompt.findOne({order:sequelize.random()});
 
             let members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-            ioredis.set(lobbyCode, members.length); //disallows users to join lobby while race in progress
+            await ioredis.set(lobbyCode, members.length); //disallows users to join lobby while race in progress
             
-            io.to(lobbyCode).emit('raceInit', text);
+            io.to(lobbyCode).emit('raceInit', { prompt: prompt});
         }
         else{
             io.to(lobbyCode).emit('raceInit', { error: "Not everyone is ready to start the race."});
         }
     });
 
-    socket.on('letterTyped', async (lobbyCode, playerName, percentage) =>{ //WPM
+    socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ //WPM
+        let obj = await ioredis.get(socket.id);
+        let {username: playerName} = JSON.parse(obj);
         if(percentage == 100){
             io.to(lobbyCode).emit('updateText', { 
                 playerName: playerName, 
                 percentage: percentage 
             });
 
-            await ioredis.get(lobbyCode);
-            let SQL = `SOMETHING SOMETHING ${lobbycode}`;
-            connection.query(SQL, (err, res, fields) =>{ //If the user has an account, we will log their race result.
-                console.log(res);
-            });
+            // await ioredis.get(lobbyCode);
+            // let SQL = `SOMETHING SOMETHING ${lobbycode}`;
+            // connection.query(SQL, (err, res, fields) =>{ //If the user has an account, we will log their race result.
+            //     console.log(res);
+            // });
 
-            await ioredis.del(lobbyCode);
         }
         else{
             io.to(lobbyCode).emit('updateText', { 
@@ -190,9 +208,29 @@ io.on('connection', async (socket) => {
         }
     });
 
-    // socket.on('disconnnecting', () =>{
+    socket.on('disconnecting', async (reason) =>{
+        let user = await ioredis.get(socket.id);
+        if(user != null){
+            let {lobby: lobbyCode,leader} = JSON.parse(user);
+            let members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
+            if(leader && members.size > 1){
+                let ids = members.values();
+                let newLeader = null;
+                while(newLeader == null || newLeader == socket.id){
+                    newLeader = ids.next().value;
+                }
 
-    // });
+                let transferPower = await ioredis.get(newLeader);
+                let obj = JSON.parse(transferPower);
+                obj.leader = true;
+                let newObj = JSON.stringify(obj);
+                await ioredis.set(newLeader, newObj);
+            }
+            await ioredis.del(socket.id);
+    
+            await updateLobby(lobbyCode);
+        }
+    });
 
     socket.on('disconnect', () => {
         console.log(`User ${socket.id} has disconnected`);
