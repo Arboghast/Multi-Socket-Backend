@@ -90,10 +90,37 @@ async function searchForUser(lobbyCode, playerName) {
   return null;
 }
 
+//change user properties
+async function changeProperties(socketID, lobbyCode, ready, leader, toggle){
+  let jsonStr = await ioredis.get(socketID);
+  let json = JSON.parse(jsonStr);
+
+  if(leader != null){
+    json.leader = leader;
+  }   
+  if(ready != null){
+    json.ready = ready;
+  }
+  if(toggle){
+    json.ready = !json.ready;
+  }
+  if(json.lobbyCode != lobbyCode){
+    json.lobbyCode = lobbyCode;
+  }
+
+  let jsonStr = JSON.stringify(json);
+  await ioredis.set(socketID, json);
+}
+
 io.on('connection', async (socket) => {
   console.log(`User ${socket.id} has connected`);
 
   socket.leave(socket.id); // to leave the default room
+
+  socket.on('newUser', async ({username})=>{
+    const json = JSON.stringify({username: username, ready: false, leader: false, lobbyCode: null});
+    await ioredis.set(socket.id, json);
+  });
 
   socket.on('createLobby', async ({username}) =>{
     const rooms = await io.of('/').adapter.allRooms();
@@ -104,13 +131,8 @@ io.on('connection', async (socket) => {
     //lobbyCode = 'arceux';
 
     socket.join(lobbyCode);
-
-    const json = JSON.stringify({username: username, ready: false, leader: true, lobby: lobbyCode});
-    await ioredis.set(socket.id, json);
-
-    socket.emit('createLobbyResponse', {
-      lobbyCode: lobbyCode,
-    });
+    await changeProperties(socket.id, lobbyCode, false, true, false);
+    await updateLobby(lobbyCode);
   });
 
   socket.on('joinLobby', async ({lobbyCode, username}) =>{
@@ -129,15 +151,12 @@ io.on('connection', async (socket) => {
       socket.emit('lobbyUpdate', {error: 'Game is in progress, please wait.'});
     } else {
       socket.join(lobbyCode);
-      const json = JSON.stringify({username: username, ready: false, leader: false, lobby: lobbyCode});
-      await ioredis.set(socket.id, json);
-
+      await changeProperties(socket.id, lobbyCode, false, false, false);
       await updateLobby(lobbyCode);
     }
   });
 
   socket.on('leaveLobby', async ({lobbyCode})=>{
-    // console.log("HIT");
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
     if (members.has(socket.id)) {
       const str = await ioredis.get(socket.id);
@@ -148,16 +167,10 @@ io.on('connection', async (socket) => {
         while (newLeader == null || newLeader == socket.id) {
           newLeader = ids.next().value;
         }
-
-        const transferPower = await ioredis.get(newLeader);
-        const obj = JSON.parse(transferPower);
-        obj.leader = true;
-        const newObj = JSON.stringify(obj);
-        await ioredis.set(newLeader, newObj);
+        await changeProperties(newLeader, lobbyCode, null, true, false);
       }
       socket.leave(lobbyCode);
-      await ioredis.del(socket.id);
-
+      await changeProperties(socket.id, null, false, false, false);
       await updateLobby(lobbyCode);
     } else {
       socket.emit('lobbyUpdate', {error: 'You are not a member of this lobby'});
@@ -165,12 +178,7 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('toggleReady', async ({lobbyCode}) =>{
-    const userObj = await ioredis.get(socket.id);
-    const obj = JSON.parse(userObj);
-    obj.ready = !obj.ready;
-    const str = JSON.stringify(obj);
-    await ioredis.set(socket.id, str);
-
+    await changeProperties(socket.id, lobbyCode, null, null, true);
     await updateLobby(lobbyCode);
   });
 
@@ -180,7 +188,7 @@ io.on('connection', async (socket) => {
     const userID = await searchForUser(lobbyCode, playerName);
     if (leader && userID != null) {
       await io.of('/').adapter.remoteLeave(userID, lobbyCode);
-      await ioredis.del(userID);
+      await changeProperties(userID, null, false, false, false);
       await updateLobby(lobbyCode);
     } else {
       socket.emit('lobbyUpdate', {error: `Unable to kick ${playerName} from the lobby`});
@@ -192,8 +200,10 @@ io.on('connection', async (socket) => {
     if (flag) {
       const {prompt} = await Prompt.findOne({order: sequelize.random()});
       await ioredis.set(lobbyCode, 0); // disallows users to join lobby while race in progress
-
       io.to(lobbyCode).emit('raceInit', {prompt: prompt});
+      for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
+        await changeProperties(socketID, lobbyCode, false, null, false);
+      }
     } else {
       io.to(lobbyCode).emit('raceInit', {error: 'Not everyone is ready to start the race.'});
     }
@@ -202,7 +212,7 @@ io.on('connection', async (socket) => {
   socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ // WPM
     const obj = await ioredis.get(socket.id);
     const {username: playerName} = JSON.parse(obj);
-    if (percentage == 3) {
+    if (percentage == 100) {
       let pl = await ioredis.get(lobbyCode);
       io.to(lobbyCode).emit('updateText', {
         playerName: playerName,
@@ -219,52 +229,33 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('returnLobby', async ({lobbyCode})=>{
-    const pipeline = ioredis.pipeline();
-    const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-    for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
-      const user = await ioredis.get(socketID);
-      const obj = JSON.parse(user);
-      obj.ready = false;
-      const str = JSON.stringify(obj);
-      pipeline.set(socketID, str);
-    }
-
-    pipeline.del(lobbyCode);
-    pipeline.exec(); // batch job
-
-    updateLobby(lobbyCode);
-  });
-
   socket.on('disconnecting', async (reason) =>{
     const user = await ioredis.get(socket.id);
     if (user != null) {
-      const {lobby: lobbyCode, leader} = JSON.parse(user);
-      const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-
-      if (leader && members.size > 1) {
-        const ids = members.values();
-        let newLeader = null;
-        while (newLeader == null || newLeader == socket.id) {
-          newLeader = ids.next().value;
+      const {lobby: lobbyCode, leader, username} = JSON.parse(user);
+      if(lobbyCode != null){
+          const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
+        if (leader && members.size > 1) {
+          const ids = members.values();
+          let newLeader;
+          do{
+            newLeader = ids.next().value;
+          } while (newLeader == socket.id);
+          await changeProperties(newLeader, lobbyCode, null, true, false);
         }
 
-        const transferPower = await ioredis.get(newLeader);
-        const obj = JSON.parse(transferPower);
-        obj.leader = true;
-        const newObj = JSON.stringify(obj);
-        await ioredis.set(newLeader, newObj);
+        const status = await ioredis.get(lobbyCode);
+        if (status != null) { // implies that game is in progress
+          socket.to(lobbyCode).emit('updateText', {error: `User ${username} has disconnected`} );
+        } else {
+          await updateLobby(lobbyCode);
+        } 
       }
+      
       await ioredis.del(socket.id);
-      const status = await ioredis.get(lobbyCode);
-      if (status != null) { // implies that game is in progress
-        socket.to(lobbyCode).emit('updateText', {error: 'User has disconnected'} );
-      } else {
-        await updateLobby(lobbyCode);
-      }
-      const theOne = await User.findOne({where: {username: user}});
+      const theOne = await User.findOne({where: {username: username}});
       if (theOne != null) {
-        await User.destroy({where: {username: user}});
+        await User.destroy({where: {username: username}});
       }
     }
   });
