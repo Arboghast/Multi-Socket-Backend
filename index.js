@@ -311,8 +311,10 @@ io.on('connection', async (socket) => {
   */
   socket.on('disconnecting', async (reason) =>{
     const user = await ioredis.get(socket.id);
+    console.log(user);
     if (user != null) {
       const {lobbyCode, leader, username} = JSON.parse(user);
+      console.log(lobbyCode, leader, username);
       if(lobbyCode != null){
           const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
         if (leader && members.size > 1) {
