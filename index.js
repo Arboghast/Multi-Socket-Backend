@@ -40,16 +40,12 @@ const redis = require('socket.io-redis');
 const Ior = require('ioredis');
 const ioredis = new Ior(6379, process.env.REDIS_HOST);
 
-//
-
-//ioredis = "a";
 io.adapter(redis({host: process.env.REDIS_HOST, port: 6379}));
 const randomId = require('nanoid').nanoid;
 
 //Returns the status of the lobby
 async function updateLobby(lobbyCode) {
   const members = await io.of('/').adapter.sockets(new Set([lobbyCode])); // socket-id members
-  // console.log(members);
   const users = [];
   for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
     const str = await ioredis.get(socketID);
@@ -57,9 +53,8 @@ async function updateLobby(lobbyCode) {
     users.push(obj);
   }
 
-  // console.log(users);
   io.to(lobbyCode).emit('lobbyUpdate', {
-    users: users,
+    users: users
   });
 }
 
@@ -108,7 +103,7 @@ async function changeProperties(socketID, lobbyCode, ready, leader, toggle){
     json.lobbyCode = lobbyCode;
   }
 
-  let jsonStr = JSON.stringify(json);
+  jsonStr = JSON.stringify(json);
   await ioredis.set(socketID, json);
 }
 
@@ -122,7 +117,7 @@ io.on('connection', async (socket) => {
     await ioredis.set(socket.id, json);
   });
 
-  socket.on('createLobby', async ({username}) =>{
+  socket.on('createLobby', async ({}) =>{
     const rooms = await io.of('/').adapter.allRooms();
     let lobbyCode;
     do{
@@ -135,7 +130,7 @@ io.on('connection', async (socket) => {
     await updateLobby(lobbyCode);
   });
 
-  socket.on('joinLobby', async ({lobbyCode, username}) =>{
+  socket.on('joinLobby', async ({lobbyCode}) =>{
     //await ioredis.del(lobbyCode); // COMMENT FOR PRODUCTION
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
@@ -209,7 +204,7 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ // WPM
+  socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ 
     const obj = await ioredis.get(socket.id);
     const {username: playerName} = JSON.parse(obj);
     if (percentage == 100) {
