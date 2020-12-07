@@ -42,6 +42,7 @@ const ioredis = new Ior(6379, process.env.REDIS_HOST);
 
 //
 
+//ioredis = "a";
 io.adapter(redis({host: process.env.REDIS_HOST, port: 6379}));
 const randomId = require('nanoid').nanoid;
 
@@ -113,7 +114,7 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('joinLobby', async ({lobbyCode, username}) =>{
-    await ioredis.del(lobbyCode); // COMMENT FOR PRODUCTION
+    //await ioredis.del(lobbyCode); // COMMENT FOR PRODUCTION
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
     const gameInProgress = await ioredis.get(lobbyCode);
@@ -230,7 +231,7 @@ io.on('connection', async (socket) => {
     }
 
     pipeline.del(lobbyCode);
-    pipeline.exec(); // batch write
+    pipeline.exec(); // batch job
 
     updateLobby(lobbyCode);
   });
