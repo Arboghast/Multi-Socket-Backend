@@ -248,7 +248,6 @@ io.on('connection', async (socket) => {
       await ioredis.set(lobbyCode, lobbyStr); // used to disallows users to join lobby while race in progress and count player standings
       
       io.to(lobbyCode).emit('raceInit', {prompt: prompt});
-      const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
       for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
         let str = await ioredis.get(socketID);
         let obj = JSON.parse(str);
