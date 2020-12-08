@@ -238,7 +238,8 @@ io.on('connection', async (socket) => {
         let newObj = {
           playerName: username,
           percentage: 0,
-          placement: null
+          placement: null,
+          wpm: 0
         };
         userArr.push(newObj);
       }
@@ -267,7 +268,7 @@ io.on('connection', async (socket) => {
     Sends the UPDATE_TEXT EVENT.
     EXAMPLE: {playerName: string, percentage: int, placement: int}
   */
-  socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ 
+  socket.on('letterTyped', async ({lobbyCode, percentage, wpm}) =>{ 
     const obj = await ioredis.get(socket.id);
     const {username: playerName} = JSON.parse(obj);
     if (percentage == 100) {
@@ -278,6 +279,7 @@ io.on('connection', async (socket) => {
         if(users[i].playerName == playerName){
           users[i].percentage = percentage;
           users[i].placement = ++pl;
+          users[i].wpm = wpm;
         }
       }
       io.to(lobbyCode).emit('updateText', {
@@ -288,8 +290,7 @@ io.on('connection', async (socket) => {
       if(members.size == pl){
         await ioredis.del(lobbyCode);
         updateLobby(lobbyCode);
-      }
-      else{
+      } else {
         let lobbyObj = {
           placement: pl,
           users: users
@@ -299,16 +300,23 @@ io.on('connection', async (socket) => {
         await ioredis.set(lobbyCode, lobbyStr); 
       }
     } else {
-        let {users} = JSON.parse(await ioredis.get(lobbyCode));
+        let {placement, users} = JSON.parse(await ioredis.get(lobbyCode));
 
         for (let i = 0; i < users.length; i++) { // iterate through a SET
-        if(users[i].playerName == playerName){
-          users[i].percentage = percentage;
+          if(users[i].playerName == playerName){
+            users[i].percentage = percentage;
+            users[i].wpm = wpm;
+          }
         }
-      }
-      io.to(lobbyCode).emit('updateText', {
-        users: users
-      });
+        io.to(lobbyCode).emit('updateText', {
+          users: users
+        });
+        let ioObj = {
+          placement: placement,
+          users: users
+        };
+        let ioStr = JSON.stringify(ioObj); 
+        await ioredis.set(lobbyCode, ioStr);
     }
   });
 
