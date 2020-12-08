@@ -304,7 +304,6 @@ io.on('connection', async (socket) => {
         for (let i = 0; i < users.length; i++) { // iterate through a SET
         if(users[i].playerName == playerName){
           users[i].percentage = percentage;
-          users[i].placement = ++pl;
         }
       }
       io.to(lobbyCode).emit('updateText', {
