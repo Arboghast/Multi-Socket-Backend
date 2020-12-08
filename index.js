@@ -331,7 +331,6 @@ io.on('connection', async (socket) => {
       const {lobbyCode, leader, username} = JSON.parse(user);
       if(lobbyCode != null){
           const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-          console.log(leader, members.size, leader && members.size > 1);
         if (leader && members.size >= 1) {
           const ids = members.values();
           let newLeader = null;
