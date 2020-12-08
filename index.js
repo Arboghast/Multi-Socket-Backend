@@ -1,42 +1,8 @@
 
 require('dotenv').config();
 const axios = require('axios');
-//const {Sequelize} = require('sequelize');
-// const sequelize = new Sequelize('NameText', process.env.USER, process.env.PASSWORD, {
-//   host: process.env.DB_HOST,
-//   dialect: 'mysql',
-//   define: {
-//     timestamps: false,
-//   },
-// });
-// const Prompt = sequelize.define('prompts', {
-//   id: {
-//     type: Sequelize.INTEGER,
-//     allowNull: false,
-//     primaryKey: true,
-//   },
-//   prompt: {
-//     type: Sequelize.STRING,
-//     allowNull: false,
-//   },
-//   language: {
-//     type: Sequelize.STRING,
-//   },
-// });
-// const User = sequelize.define('users', {
-//   id: {
-//     type: Sequelize.INTEGER,
-//     allowNull: false,
-//     primaryKey: true,
-//   },
-//   username: {
 
-//     type: Sequelize.STRING,
-//     allowNull: false,
-//   },
-// });
-
-const LOBBY_LIMIT = 7;
+const LOBBY_LIMIT = 5;
 const io = require('socket.io')(8000, {cors: true});
 const redis = require('socket.io-redis');
 const Ior = require('ioredis');
@@ -140,7 +106,7 @@ io.on('connection', async (socket) => {
   socket.on('joinLobby', async ({lobbyCode}) =>{
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-    const gameInProgress = await ioredis.get(lobbyCode);
+    const { placement: gameInProgress } = JSON.parse(await ioredis.get(lobbyCode));
 
     if (!rooms.has(lobbyCode)) {
       socket.emit('lobbyUpdate', {error: 'The lobby does not exist.'});
@@ -260,8 +226,27 @@ io.on('connection', async (socket) => {
         method: 'get',
         url: 'http://104.198.232.73:8000/prompt'
       });
-      console.log(prompt);
-      await ioredis.set(lobbyCode, 0); // used to disallows users to join lobby while race in progress and count player standings
+
+      let lobbyObj;
+      lobbyObj.placement = 0;
+
+      let userArr = [];
+      const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
+      for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
+        const str = await ioredis.get(socketID);
+        const {username} = JSON.parse(str);
+        let newObj = {
+          playerName: username,
+          percentage: 0,
+          placement: null
+        };
+        userArr.push(newObj);
+      }
+
+      lobbyObj.users = userArr;
+      let lobbyStr = JSON.stringify(lobbyObj);
+      await ioredis.set(lobbyCode, lobbyStr); // used to disallows users to join lobby while race in progress and count player standings
+      
       io.to(lobbyCode).emit('raceInit', {prompt: prompt});
       const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
       for (let it = members.values(), socketID = null; socketID = it.next().value;) { // iterate through a SET
@@ -286,12 +271,17 @@ io.on('connection', async (socket) => {
   socket.on('letterTyped', async ({lobbyCode, percentage}) =>{ 
     const obj = await ioredis.get(socket.id);
     const {username: playerName} = JSON.parse(obj);
-    if (percentage >= 3) {
-      let pl = await ioredis.get(lobbyCode);
+    if (percentage == 100) {
+      let {placement: pl, users} = JSON.parse(await ioredis.get(lobbyCode));
+
+      for (let i = 0; i < users.length; i++) { // iterate through a SET
+        if(users[i].playerName == playerName){
+          users[i].percentage = percentage;
+          users[i].placement = ++pl;
+        }
+      }
       io.to(lobbyCode).emit('updateText', {
-        playerName: playerName,
-        percentage: percentage,
-        placement: ++pl,
+        users: users
       });
 
       const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
@@ -300,12 +290,25 @@ io.on('connection', async (socket) => {
         updateLobby(lobbyCode);
       }
       else{
-        await ioredis.set(lobbyCode, pl);
+        let lobbyObj = {
+          placement: pl,
+          users: users
+        };
+
+        let lobbyStr = JSON.stringify(lobbyObj);
+        await ioredis.set(lobbyCode, lobbyStr); 
       }
     } else {
+        let {users} = JSON.parse(await ioredis.get(lobbyCode));
+
+        for (let i = 0; i < users.length; i++) { // iterate through a SET
+        if(users[i].playerName == playerName){
+          users[i].percentage = percentage;
+          users[i].placement = ++pl;
+        }
+      }
       io.to(lobbyCode).emit('updateText', {
-        playerName: playerName,
-        percentage: percentage,
+        users: users
       });
     }
   });
@@ -336,7 +339,7 @@ io.on('connection', async (socket) => {
 
         const status = await ioredis.get(lobbyCode);
         if (status != null) { // implies that game is in progress
-          let pl = await ioredis.get(lobbyCode);
+          let {placement: pl} = JSON.parse(status);
           const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
           if(members.size == pl){
             await ioredis.del(lobbyCode);
@@ -352,8 +355,7 @@ io.on('connection', async (socket) => {
       await ioredis.del(socket.id);
       try{
         await axios.delete(`http://104.198.232.73:8000/deleteUser`, { data: { Username: username } });
-      } catch{
-
+      } catch (err) {
       }
     }
   });
