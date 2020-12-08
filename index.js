@@ -1,39 +1,40 @@
 
 require('dotenv').config();
-const {Sequelize} = require('sequelize');
-const sequelize = new Sequelize('NameText', process.env.USER, process.env.PASSWORD, {
-  host: process.env.DB_HOST,
-  dialect: 'mysql',
-  define: {
-    timestamps: false,
-  },
-});
-const Prompt = sequelize.define('prompts', {
-  id: {
-    type: Sequelize.INTEGER,
-    allowNull: false,
-    primaryKey: true,
-  },
-  prompt: {
-    type: Sequelize.STRING,
-    allowNull: false,
-  },
-  language: {
-    type: Sequelize.STRING,
-  },
-});
-const User = sequelize.define('users', {
-  id: {
-    type: Sequelize.INTEGER,
-    allowNull: false,
-    primaryKey: true,
-  },
-  username: {
+const axios = require('axios');
+//const {Sequelize} = require('sequelize');
+// const sequelize = new Sequelize('NameText', process.env.USER, process.env.PASSWORD, {
+//   host: process.env.DB_HOST,
+//   dialect: 'mysql',
+//   define: {
+//     timestamps: false,
+//   },
+// });
+// const Prompt = sequelize.define('prompts', {
+//   id: {
+//     type: Sequelize.INTEGER,
+//     allowNull: false,
+//     primaryKey: true,
+//   },
+//   prompt: {
+//     type: Sequelize.STRING,
+//     allowNull: false,
+//   },
+//   language: {
+//     type: Sequelize.STRING,
+//   },
+// });
+// const User = sequelize.define('users', {
+//   id: {
+//     type: Sequelize.INTEGER,
+//     allowNull: false,
+//     primaryKey: true,
+//   },
+//   username: {
 
-    type: Sequelize.STRING,
-    allowNull: false,
-  },
-});
+//     type: Sequelize.STRING,
+//     allowNull: false,
+//   },
+// });
 
 const LOBBY_LIMIT = 7;
 const io = require('socket.io')(8000, {cors: true});
@@ -255,7 +256,11 @@ io.on('connection', async (socket) => {
   socket.on('startGame', async ({lobbyCode}) =>{
     const flag = await readyCheck(lobbyCode);
     if (flag) {
-      const {prompt} = await Prompt.findOne({order: sequelize.random()});
+      const {data: prompt} = await axios({
+        method: 'get',
+        url: 'http://104.198.232.73:8000/prompt'
+      });
+      console.log(prompt);
       await ioredis.set(lobbyCode, 0); // used to disallows users to join lobby while race in progress and count player standings
       io.to(lobbyCode).emit('raceInit', {prompt: prompt});
       const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
@@ -311,10 +316,8 @@ io.on('connection', async (socket) => {
   */
   socket.on('disconnecting', async (reason) =>{
     const user = await ioredis.get(socket.id);
-    console.log(user);
     if (user != null) {
       const {lobbyCode, leader, username} = JSON.parse(user);
-      console.log(lobbyCode, leader, username);
       if(lobbyCode != null){
           const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
         if (leader && members.size > 1) {
@@ -347,9 +350,10 @@ io.on('connection', async (socket) => {
       }
       
       await ioredis.del(socket.id);
-      const theOne = await User.findOne({where: {username: username}});
-      if (theOne != null) {
-        await User.destroy({where: {username: username}});
+      try{
+        await axios.delete(`http://104.198.232.73:8000/deleteUser`, { data: { Username: username } });
+      } catch{
+
       }
     }
   });
