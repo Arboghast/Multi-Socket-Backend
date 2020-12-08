@@ -104,6 +104,7 @@ io.on('connection', async (socket) => {
     updateLobby helper func.
   */
   socket.on('joinLobby', async ({lobbyCode}) =>{
+    //await ioredis.del(lobbyCode); //DEV
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
     let gameInProgress = await ioredis.get(lobbyCode);
@@ -330,11 +331,13 @@ io.on('connection', async (socket) => {
       const {lobbyCode, leader, username} = JSON.parse(user);
       if(lobbyCode != null){
           const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-        if (leader && members.size > 1) {
+          console.log(leader, members.size, leader && members.size > 1);
+        if (leader && members.size >= 1) {
           const ids = members.values();
           let newLeader = null;
           while (newLeader == null || newLeader == socket.id) {
             newLeader = ids.next().value;
+            console.log(newLeader);
           }
 
           let str = await ioredis.get(newLeader);
