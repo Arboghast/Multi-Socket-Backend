@@ -106,8 +106,7 @@ io.on('connection', async (socket) => {
   socket.on('joinLobby', async ({lobbyCode}) =>{
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-    let temp = await ioredis.get(lobbyCode);
-    const { placement: gameInProgress } = JSON.parse(temp);
+    let gameInProgress = await ioredis.get(lobbyCode);
 
     if (!rooms.has(lobbyCode)) {
       socket.emit('lobbyUpdate', {error: 'The lobby does not exist.'});
