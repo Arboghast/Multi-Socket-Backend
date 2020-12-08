@@ -227,7 +227,7 @@ io.on('connection', async (socket) => {
         url: 'http://104.198.232.73:8000/prompt'
       });
 
-      let lobbyObj;
+      let lobbyObj = {};
       lobbyObj.placement = 0;
 
       let userArr = [];
