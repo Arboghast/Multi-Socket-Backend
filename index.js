@@ -106,7 +106,8 @@ io.on('connection', async (socket) => {
   socket.on('joinLobby', async ({lobbyCode}) =>{
     const rooms = await io.of('/').adapter.allRooms();
     const members = await io.of('/').adapter.sockets(new Set([lobbyCode]));
-    const { placement: gameInProgress } = JSON.parse(await ioredis.get(lobbyCode));
+    let temp = await ioredis.get(lobbyCode);
+    const { placement: gameInProgress } = JSON.parse(temp);
 
     if (!rooms.has(lobbyCode)) {
       socket.emit('lobbyUpdate', {error: 'The lobby does not exist.'});
@@ -271,7 +272,8 @@ io.on('connection', async (socket) => {
     const obj = await ioredis.get(socket.id);
     const {username: playerName} = JSON.parse(obj);
     if (percentage == 100) {
-      let {placement: pl, users} = JSON.parse(await ioredis.get(lobbyCode));
+      let tempObj = await ioredis.get(lobbyCode)
+      let {placement: pl, users} = JSON.parse(tempObj);
 
       for (let i = 0; i < users.length; i++) { // iterate through a SET
         if(users[i].playerName == playerName){
