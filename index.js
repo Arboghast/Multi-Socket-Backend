@@ -177,11 +177,13 @@ io.on('connection', async (socket) => {
     updateLobby helper func.
   */
   socket.on('toggleReady', async ({lobbyCode}) =>{
+
     let str = await ioredis.get(socket.id);
     let obj = JSON.parse(str);
     obj.ready = !obj.ready;
     str = JSON.stringify(obj);
     await ioredis.set(socket.id, str);
+    console.log(str);
     await updateLobby(lobbyCode);
   });
 
@@ -225,7 +227,7 @@ io.on('connection', async (socket) => {
     if (flag) {
       const {data: prompt} = await axios({
         method: 'get',
-        url: 'http://104.198.232.73:8000/prompt'
+        url: `http://${process.env.EXPRESS_HOST}:8000/prompt`
       });
 
       let lobbyObj = {};
@@ -276,7 +278,7 @@ io.on('connection', async (socket) => {
       let tempObj = await ioredis.get(lobbyCode)
       let {placement: pl, users} = JSON.parse(tempObj);
 
-      for (let i = 0; i < users.length; i++) { // iterate through a SET
+      for (let i = 0; i < users.length; i++) {
         if(users[i].playerName == playerName){
           users[i].percentage = percentage;
           users[i].placement = ++pl;
@@ -303,7 +305,7 @@ io.on('connection', async (socket) => {
     } else {
         let {placement, users} = JSON.parse(await ioredis.get(lobbyCode));
 
-        for (let i = 0; i < users.length; i++) { // iterate through a SET
+        for (let i = 0; i < users.length; i++) {
           if(users[i].playerName == playerName){
             users[i].percentage = percentage;
             users[i].wpm = wpm;
@@ -363,7 +365,7 @@ io.on('connection', async (socket) => {
       
       await ioredis.del(socket.id);
       try{
-        await axios.delete(`http://104.198.232.73:8000/deleteUser`, { data: { Username: username } });
+        await axios.delete(`http://${process.env.EXPRESS_HOST}:8000/deleteUser`, { data: { Username: username } });
       } catch (err) {
       }
     }
