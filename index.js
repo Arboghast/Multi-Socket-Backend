@@ -1,14 +1,22 @@
 
 require('dotenv').config();
 const axios = require('axios');
+const randomId = require('nanoid').nanoid;
 
 const LOBBY_LIMIT = 5;
 const io = require('socket.io')(8000, {cors: true});
 const redis = require('socket.io-redis');
 const Ior = require('ioredis');
-const ioredis = new Ior(6379, process.env.REDIS_HOST);  //DEV
-io.adapter(redis({host: process.env.REDIS_HOST, port: 6379}));
-const randomId = require('nanoid').nanoid;
+const ioredis = new Ior({
+  host: process.env.REDIS_HOST,
+  port: process.env.REDIS_PORT,
+  password: process.env.REDIS_PASSWORD
+});
+io.adapter(redis({
+  host: process.env.REDIS_HOST, 
+  port: process.env.REDIS_PORT,
+  auth_pass: process.env.REDIS_PASSWORD
+}));
 
 /*  LOBBYUPDATE
   RETURN: The latest state of the lobby
@@ -183,7 +191,6 @@ io.on('connection', async (socket) => {
     obj.ready = !obj.ready;
     str = JSON.stringify(obj);
     await ioredis.set(socket.id, str);
-    console.log(str);
     await updateLobby(lobbyCode);
   });
 
